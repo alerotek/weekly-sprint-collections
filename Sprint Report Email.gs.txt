@@ -1,0 +1,172 @@
+function generateSprintReport() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("WEEKLY-SPRINT_COLLECTIONS");
+  const data = sheet.getDataRange().getValues();
+
+  const col = {
+    tse: 0,            // Column A: TSE
+    account: 1,        // Column B: Account Number
+    catchup: 7,        // Column H: Catch Up Balance
+    paid: 6,           // Column G: Amount Paid
+    timestamp: 9       // Column J: Timestamp
+  };
+
+  const sprintDays = 10;
+  const dailyTarget = 4;
+  const today = new Date();
+  const startDate = new Date('2025-07-07T00:00:00'); // Fixed sprint start date
+  const endDate = new Date(startDate);
+  endDate.setDate(startDate.getDate() + sprintDays - 1);
+
+  function normalizeDate(date) {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  }
+
+  function formatDate(date) {
+    return Utilities.formatDate(date, Session.getScriptTimeZone(), "M/d/yyyy");
+  }
+
+  const dateLabels = [];
+  for (let i = 0; i < sprintDays; i++) {
+    const d = new Date(startDate);
+    d.setDate(startDate.getDate() + i);
+    dateLabels.push(formatDate(d));
+  }
+
+  const tseSet = new Set();
+  const tseMap = {};
+  const teamDaily = Array(sprintDays).fill(0).map(() => ({ accounts: 0, collected: 0 }));
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const tse = row[col.tse];
+    const account = row[col.account];
+    const catchup = parseFloat(row[col.catchup]) || 0;
+    const paid = parseFloat(row[col.paid]) || 0;
+    const timestamp = row[col.timestamp];
+
+    if (!tse || !timestamp || !account) continue;
+    tseSet.add(tse);
+
+    if (!tseMap[tse]) {
+      tseMap[tse] = {
+        todayAccounts: [],
+        daily: Array(sprintDays).fill(0),
+        accountsCount: Array(sprintDays).fill(0),
+        totalCollected: 0,
+        activeDays: new Set()
+      };
+    }
+
+    const entryDate = normalizeDate(new Date(timestamp));
+    const dayDiff = Math.floor((entryDate - normalizeDate(startDate)) / (1000 * 60 * 60 * 24));
+    if (dayDiff < 0 || dayDiff >= sprintDays) continue;
+
+    teamDaily[dayDiff].accounts++;
+    teamDaily[dayDiff].collected += paid;
+
+    tseMap[tse].daily[dayDiff] += paid;
+    tseMap[tse].accountsCount[dayDiff]++;
+    tseMap[tse].totalCollected += paid;
+    tseMap[tse].activeDays.add(dayDiff);
+
+    const isToday = normalizeDate(today).getTime() === entryDate.getTime();
+    if (isToday) {
+      tseMap[tse].todayAccounts.push({ account, catchup, paid });
+    }
+  }
+
+  let html = `<div style="font-family:Arial,sans-serif;">`;
+  html += `<h2 style="color:#003366;">WEEKLY SPRINT COLLECTION REPORT</h2>`;
+  html += `<p style="font-size:14px;">Sprint Period: <b>${formatDate(startDate)} – ${formatDate(endDate)}</b></p>`;
+
+  html += `<h3 style="color:#00509E;">Team 10-Day Performance</h3>`;
+  html += `<table border="1" cellpadding="5" style="border-collapse:collapse;font-size:14px;">`;
+  html += `<tr style="background:#e6f0ff;"><th>Date</th><th>Accounts Worked</th><th>Amount Collected (KES)</th></tr>`;
+
+  let teamTotalCollected = 0;
+  let teamTotalAccounts = 0;
+
+  for (let i = 0; i < sprintDays; i++) {
+    const dailyAccounts = teamDaily[i].accounts;
+    const dailyCollected = teamDaily[i].collected;
+    teamTotalCollected += dailyCollected;
+    teamTotalAccounts += dailyAccounts;
+
+    html += `<tr>
+      <td>${dateLabels[i]}</td>
+      <td style="text-align:center;">${dailyAccounts}</td>
+      <td style="text-align:right;">${dailyCollected.toLocaleString()}</td>
+    </tr>`;
+  }
+
+  html += `</table><br>`;
+  html += `<p><b>Total Accounts Worked:</b> ${teamTotalAccounts} &nbsp; | &nbsp; <b>Total Collected:</b> KES ${teamTotalCollected.toLocaleString()}</p>`;
+
+  html += `<h3 style="color:#00509E;">Top 3 Collectors</h3>`;
+  const leaderboard = Array.from(tseSet).map(tse => ({
+    name: tse,
+    collected: tseMap[tse].totalCollected || 0
+  })).sort((a, b) => b.collected - a.collected).slice(0, 3);
+
+  leaderboard.forEach((entry, i) => {
+    html += `<p><b>${i + 1}.</b> ${entry.name} - KES ${entry.collected.toLocaleString()}</p>`;
+  });
+
+  html += `<h3 style="color:#00509E;">Individual TSE Reports</h3>`;
+  Array.from(tseSet).forEach(tse => {
+    const tseData = tseMap[tse];
+    const totalAccounts = tseData.accountsCount.reduce((a, b) => a + b, 0);
+    const daysWorked = tseData.activeDays.size || 1;
+    const dailyAvg = (totalAccounts / daysWorked).toFixed(1);
+
+    let remark = 'No Activity Logged Yet';
+    if (dailyAvg >= 5) {
+      remark = 'Outstanding performance – You’re setting the pace!';
+    } else if (dailyAvg >= 4) {
+      remark = 'Great effort – Keep up the momentum!';
+    } else if (dailyAvg >= 2) {
+      remark = 'Good start – Try reach your daily target!';
+    } else if (dailyAvg > 0) {
+      remark = 'Low Activity – Let’s step it up.';
+    }
+
+    html += `<div style="margin-bottom:15px;">`;
+    html += `<b style="color:#003366; font-size:15px;">${tse}</b><br>`;
+
+    if (tseData.todayAccounts.length > 0) {
+      html += `<i>Today's Activity:</i><br>`;
+      tseData.todayAccounts.forEach(a => {
+        html += `• ${a.account} | Catch Up Bal.: KES ${a.catchup} | Paid: KES ${a.paid}<br>`;
+      });
+    } else {
+      html += `<i>No activity logged today.</i><br>`;
+    }
+
+    html += `<u>7-Day Summary:</u><br>`;
+    for (let i = 0; i < sprintDays; i++) {
+      html += `${dateLabels[i]}: KES ${tseData.daily[i].toLocaleString()} (${tseData.accountsCount[i]} accounts)<br>`;
+    }
+
+    html += `<p>• Weekly Accounts Worked: ${totalAccounts}<br>`;
+    html += `• Total Collected: KES ${tseData.totalCollected.toLocaleString()}<br>`;
+    html += `• Daily Avg: ${dailyAvg}<br>`;
+    html += `<b>Comment:</b> ${remark}</p>`;
+    html += `</div>`;
+  });
+
+  html += `<hr><p style="font-size:12px;"><a href="https://docs.google.com/spreadsheets/d/1-1uqBqzAqnfZlGZgQIspN3uK_xjZEjAOoRsQ9Zmcezs/edit?usp=sharing" target="_blank">Access the live sprint sheet</a></p>`;
+  html += `</div>`;
+
+  GmailApp.sendEmail(
+    "kevin@example.com, abel@example.com, anderson@example.com, armogast@example.com, cecilia@example.com, victoria@example.com, daniel@example.com, doreen@example.com, edwin@example.com, geoffrey@example.com, leslie@example.com, michael@example.com, moses@example.com, paul@example.com, rama@example.com, salim@example.com, stephen@example.com, steve@example.com
+",
+    "WEEKLY SPRINT COLLECTION REPORT",
+    "This is an HTML email.",
+    {
+      htmlBody: html,
+      cc: "kevin@example.com, manasseh@example.com, collins@example.com, mary@example.com, danson@example.com, jack@example.com, donal@example.com
+"
+    }
+  );
+}

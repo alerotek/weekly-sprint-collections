@@ -1,0 +1,21 @@
+function setBlueConditionalFormattingOnColH() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("WEEKLY-SPRINT_COLLECTIONS");
+  if (!sheet) return;
+
+  // Remove existing conditional formats on the sheet to avoid duplicates
+  sheet.clearConditionalFormatRules();
+
+  // Range: from H2 to bottom (adjust as needed)
+  const range = sheet.getRange("H2:H");
+
+  // Custom formula rule: cell value ≤ 0 AND is a number
+  const rule = SpreadsheetApp.newConditionalFormatRule()
+    .whenFormulaSatisfied('=AND(ISNUMBER(H2), H2 <= 0)')
+    .setBackground("#0000FF") // Blue color
+    .setRanges([range])
+    .build();
+
+  // Add the rule
+  sheet.setConditionalFormatRules([rule]);
+}

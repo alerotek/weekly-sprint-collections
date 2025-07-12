@@ -1,0 +1,78 @@
+function onEdit(e) {
+  if (!e) return;
+
+  const sheetName = "WEEKLY-SPRINT_COLLECTIONS";
+  const sheet = e.source.getActiveSheet();
+  if (sheet.getName() !== sheetName) return;
+
+  const editedRange = e.range;
+  const editedCol = editedRange.getColumn();
+  const editedRow = editedRange.getRow();
+  const editedValue = e.value;
+
+  const colB = 2, colF = 6, colG = 7, colH = 8, colJ = 10;
+
+  // Helper: show error message and highlight cell red, then clear after 1 sec
+  function showError(msg) {
+    SpreadsheetApp.getUi().alert(msg);
+    editedRange.setBackground("red");
+    Utilities.sleep(1000);
+    editedRange.setBackground(null);
+  }
+
+  // Protect Col H from manual edits
+  if (editedCol === colH) {
+    showError("Column H is protected and cannot be edited directly.");
+    editedRange.setValue(e.oldValue || "");
+    return;
+  }
+
+  // Sequence validations
+
+  // 1. B must be filled before F or G
+  if ((editedCol === colF || editedCol === colG)) {
+    const bVal = sheet.getRange(editedRow, colB).getValue();
+    if (bVal === "" || bVal === null) {
+      showError("Please fill Column B before entering data in Column F or G.");
+      editedRange.setValue("");
+      return;
+    }
+  }
+
+  // 2. F must be filled before G
+  if (editedCol === colG) {
+    const fVal = sheet.getRange(editedRow, colF).getValue();
+    if (fVal === "" || isNaN(Number(fVal))) {
+      showError("Please fill Column F before entering data in Column G.");
+      editedRange.setValue("");
+      return;
+    }
+  }
+
+  // Only allow numeric in B, F, G
+  if ([colB, colF, colG].includes(editedCol)) {
+    if (editedValue === null || editedValue === "") return; // allow clearing cells
+
+    const numVal = Number(editedValue);
+    if (isNaN(numVal)) {
+      showError(`Only numeric values are allowed in column ${String.fromCharCode(64 + editedCol)}.`);
+      editedRange.setValue("");
+      return;
+    }
+  }
+
+  // Calculate H = F - G when F or G changes
+  if ([colF, colG].includes(editedCol)) {
+    const fVal = sheet.getRange(editedRow, colF).getValue();
+    const gVal = sheet.getRange(editedRow, colG).getValue();
+
+    if (!isNaN(Number(fVal)) && !isNaN(Number(gVal))) {
+      sheet.getRange(editedRow, colH).setValue(Number(fVal) - Number(gVal));
+    }
+  }
+
+  // Timestamp in J for changes in B, F, G
+  if ([colB, colF, colG].includes(editedCol)) {
+    sheet.getRange(editedRow, colJ).setValue(new Date());
+  }
+}

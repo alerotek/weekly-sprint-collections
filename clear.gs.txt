@@ -1,0 +1,35 @@
+function clearSprintData() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("WEEKLY-SPRINT_COLLECTIONS");
+
+  if (!sheet) {
+    Logger.log("Sheet 'WEEKLY-SPRINT_COLLECTIONS' not found!");
+    return;
+  }
+
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+
+  // If less than 2 rows, no data to clear
+  if (lastRow < 2) {
+    Logger.log("No data rows to clear.");
+    return;
+  }
+
+  // Range excluding column A (start from column 2)
+  const rangeToClear = sheet.getRange(2, 2, lastRow - 1, lastCol - 1);
+
+  const formulas = rangeToClear.getFormulas();
+  const values = rangeToClear.getValues();
+
+  for (let r = 0; r < formulas.length; r++) {
+    for (let c = 0; c < formulas[0].length; c++) {
+      if (!formulas[r][c]) {
+        // Clear value only if no formula present
+        values[r][c] = '';
+      }
+    }
+  }
+
+  rangeToClear.setValues(values);
+}
